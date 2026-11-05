@@ -32,6 +32,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import javax.activation.DataSource;
+import javax.activation.URLDataSource;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 
@@ -48,6 +49,8 @@ import org.apache.cxf.message.XMLMessage;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
+
+import static org.hamcrest.CoreMatchers.instanceOf;
 
 public class AttachmentDeserializerTest extends Assert {
     
@@ -648,6 +651,42 @@ public class AttachmentDeserializerTest extends Assert {
         }
         assertEquals(1249, count);
         assertEquals(-1, ins.read(new byte[1000], 100, 600));
+    }
+
+    @Test
+    public void testCXF8706() {
+        final DataSource ds = AttachmentUtil
+            .getAttachmentDataSource("cid:http://image.com/1.gif", Collections.<Attachment>emptyList());
+        assertThat(ds, instanceOf(LazyDataSource.class));
+    }
+
+    @Test
+    public void testCXF8706followUrl() {
+        System.setProperty(AttachmentUtil.ATTACHMENT_XOP_FOLLOW_URLS_PROPERTY, "true");
+        try {
+            final DataSource ds = AttachmentUtil
+                .getAttachmentDataSource("cid:http://image.com/1.gif", Collections.<Attachment>emptyList());
+            assertThat(ds, instanceOf(URLDataSource.class));
+        } finally {
+            System.clearProperty(AttachmentUtil.ATTACHMENT_XOP_FOLLOW_URLS_PROPERTY);
+        }
+    }
+
+    @Test
+    public void testCXF8706NonCidUrlNotFollowed() {
+        // a plain (non "cid:") xop:Include href must never be resolved as a remote/local URL
+        DataSource ds = AttachmentUtil
+            .getAttachmentDataSource("http://image.com/1.gif", Collections.<Attachment>emptyList());
+        assertThat(ds, instanceOf(LazyDataSource.class));
+
+        ds = AttachmentUtil
+            .getAttachmentDataSource("file:///etc/passwd", Collections.<Attachment>emptyList());
+        assertThat(ds, instanceOf(LazyDataSource.class));
+
+        // percent-encoded "cid:" URL is decoded but still not followed by default
+        ds = AttachmentUtil
+            .getAttachmentDataSource("cid:http%3A%2F%2Fimage.com%2F1.gif", Collections.<Attachment>emptyList());
+        assertThat(ds, instanceOf(LazyDataSource.class));
     }
 }
 
